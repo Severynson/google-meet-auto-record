@@ -4,24 +4,26 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>ChromeLauncher</string>
+    <string>MeetRecorder</string>
     <key>CFBundleDisplayName</key>
-    <string>Google Chrome</string>
+    <string>MeetRecorder</string>
     <key>CFBundleIdentifier</key>
-    <string>com.local.chromelauncher</string>
+    <string>com.local.meetrecorder</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleExecutable</key>
-    <string>launch</string>
+    <string>MeetRecorder</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
 </dict>
 </plist>

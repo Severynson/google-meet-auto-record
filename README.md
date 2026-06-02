@@ -1,68 +1,67 @@
-# google-meet-auto-record
+# MeetRecorder
 
-Automatically starts recording when you join a Google Meet call. No extensions, no bots — uses Chrome's built-in remote debugging API to click the native Meet UI on your behalf.
+Automatically starts recording when you join a Google Meet call. Runs as a macOS menu bar app that installs itself as a login item.
 
 **Requirements:**
-- macOS
-- Google Workspace account with recording enabled (basic plan or above)
-- Google Chrome installed in `/Applications`
+- macOS 12+
+- Google Workspace account with recording enabled (Business Starter or above)
+- Chrome opened via the [accessibility-autoenabled-chrome-wrapper](https://github.com/your-repo/accessibility-autoenabled-chrome-wrapper) app, which launches Chrome with `--remote-debugging-port=9222`
 
 ---
 
 ## How it works
 
-1. **ChromeLauncher** — a `.app` wrapper that opens Chrome with `--remote-debugging-port=9222`. This exposes a local WebSocket API (Chrome DevTools Protocol) that MeetRecorder uses to control the page.
-2. **MeetRecorder** — a background process that polls Chrome every 3 seconds. When it detects a `meet.google.com` tab, it clicks: **More options → Start recording → confirms** (subtitles off, transcript off, Gemini notes on).
+MeetRecorder polls Chrome every 3 seconds via Chrome DevTools Protocol (port 9222). When a `meet.google.com` tab is detected, it:
 
-Nothing leaves your machine. Port 9222 is bound to `localhost` only.
+1. Clicks **More options** (⋮)
+2. Clicks **Start recording**
+3. In the confirmation panel: turns off captions, turns off transcript, enables Gemini notes
+4. Clicks **Confirm**
+
+All interaction uses stable `jsname` attributes from Meet's HTML — language-independent, works regardless of UI locale.
 
 ---
 
-## Setup (one-time)
+## Install
 
-### 1. Build ChromeLauncher
+1. Download `MeetRecorder.dmg`
+2. Open the DMG, drag `MeetRecorder.app` to **Applications**
+3. Launch `MeetRecorder` from Applications or Spotlight
 
-```bash
-cd ChromeLauncher
-bash build.sh
-```
+On first launch, the status window appears. Click **Install login item** — MeetRecorder will start automatically on every login from then on.
 
-This creates `ChromeLauncher.app` in that folder.
+---
 
-**Optional — make it look like Chrome in the Dock:**
-1. Find Google Chrome in Finder (`/Applications`), press `Cmd+I`
-2. Click the icon thumbnail in the top-left of the info panel, press `Cmd+C`
-3. Press `Cmd+I` on `ChromeLauncher.app`, click its icon thumbnail, press `Cmd+V`
+## Status window
 
-### 2. Add ChromeLauncher to the Dock
+Click the menu bar icon (●) to open it.
 
-Drag `ChromeLauncher/ChromeLauncher.app` to your Dock. Remove the original Google Chrome from the Dock (right-click → Options → Remove from Dock) so you always open Chrome through the wrapper.
+| Row | Meaning |
+|---|---|
+| Chrome CDP | Whether Chrome is running with debug port 9222 open |
+| Login item | Whether MeetRecorder is installed as a login item |
+| Last recording | Time of the most recent auto-started recording |
 
-### 3. Build MeetRecorder
+**Buttons change based on state:**
 
-```bash
-cd MeetRecorder
-bash build.sh
-```
+| Login item state | Buttons shown |
+|---|---|
+| Not installed | Install login item |
+| Installed & running | Disable · Uninstall |
+| Installed (disabled) | Enable · Uninstall |
 
-This produces the `MeetRecorder` binary in that folder.
+- **Disable** — stops the login item service but keeps it configured (easy to re-enable)
+- **Uninstall** — removes the login item entirely
 
 ---
 
 ## Daily use
 
-**Every time you want auto-recording:**
+1. Open Chrome via the **accessibility wrapper app** (not directly from Dock)
+2. MeetRecorder starts at login automatically — nothing else to do
+3. Join any Google Meet call — recording starts within ~3 seconds
 
-1. Open Chrome via **ChromeLauncher** (from the Dock). If Chrome is already open, quit it first — it must be launched with the debug port flag.
-2. In a terminal, run:
-   ```bash
-   /path/to/MeetRecorder/MeetRecorder
-   ```
-3. Join your Google Meet call normally. Recording starts automatically within ~3 seconds of the meeting UI loading.
-
-**To stop MeetRecorder:** press `Ctrl+C` in the terminal, or close the terminal window.
-
-**Logs** are written to `~/Library/Logs/MeetRecorder.log` — check there if recording doesn't start.
+**Logs:** `~/Library/Logs/MeetRecorder.log`
 
 ---
 
@@ -70,19 +69,19 @@ This produces the `MeetRecorder` binary in that folder.
 
 | Symptom | Fix |
 |---|---|
-| "CDP: no Meet tab found" in logs | Chrome was not opened via ChromeLauncher. Quit Chrome, relaunch via ChromeLauncher. |
-| Recording doesn't start, no error | Meet UI may still be loading — MeetRecorder retries every 3s automatically. |
-| "Start recording item not found" | Your Google account lacks recording permission. Requires Google Workspace (Business Starter or above). |
-| "confirm_btn_not_found" in logs | Meet UI changed. Open an issue with the HTML of the confirm button. |
+| Chrome CDP: "Not detected" | Chrome was not opened via the wrapper app. Quit Chrome, relaunch via wrapper. |
+| Recording doesn't start | Meet UI still loading — retries every 3s automatically. Check log for errors. |
+| "Start recording item not found" | Account lacks recording permission (requires Google Workspace). |
+| Second launch does nothing | Correct — duplicate detection is intentional. Existing instance receives focus signal. |
 
 ---
 
-## Recording settings applied automatically
+## Build from source
 
-| Setting | Value |
-|---|---|
-| Captions in recording | Off |
-| Transcript | Off |
-| Gemini notes | On |
+```bash
+cd MeetRecorder
+bash build.sh          # produces MeetRecorder.app
+bash package-dmg.sh    # wraps it in MeetRecorder.dmg
+```
 
-These match the checkbox states from the recording confirmation panel.
+Requires Xcode Command Line Tools (`xcode-select --install`).
