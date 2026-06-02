@@ -1,0 +1,4 @@
+#!/bin/bash
+# --remote-debugging-port=9222 lets MeetRecorder use Chrome DevTools Protocol
+# to click elements by jsname (language-independent, unlike aria-label).
+open -na "Google Chrome" --args --remote-debugging-port=9222
