@@ -5,6 +5,7 @@ import Foundation
 struct AXMeetSession {
     let key: String
     let app: NSRunningApplication
+    let root: AXUIElement
     let window: AXUIElement
     let title: String
 }
@@ -12,19 +13,34 @@ struct AXMeetSession {
 struct AXControlTitles {
     let name: String
     let titles: [String]
+    let kind: AXControlKind
+}
+
+enum AXControlKind {
+    case popupButton
+    case menuItem
+    case checkbox
+    case button
+}
+
+private struct AXElementMatch {
+    let element: AXUIElement
+    let source: String
+    let depth: Int
+    let visited: Int
 }
 
 // Control labels are loaded from the bundled buttons.json (see ButtonConfig).
 // `name` is only for logging; `titles` are the accessible names matched in the AX tree.
 enum AXMeetControls {
-    static var moreOptions: AXControlTitles { AXControlTitles(name: "more options", titles: ButtonConfig.shared.moreOptions) }
-    static var manageRecording: AXControlTitles { AXControlTitles(name: "manage recording", titles: ButtonConfig.shared.manageRecording) }
-    static var subtitles: AXControlTitles { AXControlTitles(name: "subtitles checkbox", titles: ButtonConfig.shared.subtitles) }
-    static var transcript: AXControlTitles { AXControlTitles(name: "transcript checkbox", titles: ButtonConfig.shared.transcript) }
-    static var gemini: AXControlTitles { AXControlTitles(name: "gemini checkbox", titles: ButtonConfig.shared.gemini) }
-    static var startRecording: AXControlTitles { AXControlTitles(name: "start recording", titles: ButtonConfig.shared.startRecording) }
-    static var leaveCall: AXControlTitles { AXControlTitles(name: "leave call", titles: ButtonConfig.shared.leaveCall) }
-    static var confirmStart: AXControlTitles { AXControlTitles(name: "confirm start", titles: ButtonConfig.shared.confirmStart) }
+    static var moreOptions: AXControlTitles { AXControlTitles(name: "more options", titles: ButtonConfig.shared.moreOptions, kind: .popupButton) }
+    static var manageRecording: AXControlTitles { AXControlTitles(name: "manage recording", titles: ButtonConfig.shared.manageRecording, kind: .menuItem) }
+    static var subtitles: AXControlTitles { AXControlTitles(name: "subtitles checkbox", titles: ButtonConfig.shared.subtitles, kind: .checkbox) }
+    static var transcript: AXControlTitles { AXControlTitles(name: "transcript checkbox", titles: ButtonConfig.shared.transcript, kind: .checkbox) }
+    static var gemini: AXControlTitles { AXControlTitles(name: "gemini checkbox", titles: ButtonConfig.shared.gemini, kind: .checkbox) }
+    static var startRecording: AXControlTitles { AXControlTitles(name: "start recording", titles: ButtonConfig.shared.startRecording, kind: .button) }
+    static var leaveCall: AXControlTitles { AXControlTitles(name: "leave call", titles: ButtonConfig.shared.leaveCall, kind: .button) }
+    static var confirmStart: AXControlTitles { AXControlTitles(name: "confirm start", titles: ButtonConfig.shared.confirmStart, kind: .button) }
 }
 
 final class AXMeetClient {
@@ -101,7 +117,7 @@ final class AXMeetClient {
                 let key = "\(app.processIdentifier):\(title)"
 
                 if title.localizedCaseInsensitiveContains("meet") {
-                    sessions.append(AXMeetSession(key: key, app: app, window: window, title: title))
+                    sessions.append(AXMeetSession(key: key, app: app, root: root, window: window, title: title))
                 }
             }
         }
@@ -117,60 +133,83 @@ final class AXMeetClient {
     // True once the given control is present in the window's AX tree.
     // Used to gate automation: only start once "more options" actually appears.
     func hasControl(_ control: AXControlTitles, in session: AXMeetSession) -> Bool {
-        findElement(in: session.window, matching: control) != nil
+        findElement(matching: control, in: session) != nil
     }
 
     func click(_ control: AXControlTitles, in session: AXMeetSession) -> String {
-        session.app.activate(options: [.activateIgnoringOtherApps])
-        Thread.sleep(forTimeInterval: 0.2)
+        focus(session)
 
-        guard let element = findElement(in: session.window, matching: control) else {
+        guard let match = findElement(matching: control, in: session) else {
+            Logger.log("AX match \(control.name) → not_found session='\(session.title)'")
             return "not_found"
         }
+        let element = match.element
 
-        guard let point = centerPoint(of: element) else {
-            return "no_bounds"
+        if press(element) {
+            Logger.log("AX press \(control.name) → ok \(describe(match, session: session))")
+            return "ok"
         }
 
-        let clicked = postMouseClick(at: point)
-        Logger.log("AX OS click \(control.name) → \(clicked ? "ok" : "failed") at \(Int(point.x)),\(Int(point.y))")
-        return clicked ? "ok" : "cg_event_failed"
+        Logger.log("AX press \(control.name) → failed \(describe(match, session: session))")
+        return "ax_press_failed"
     }
 
     func setCheckbox(_ control: AXControlTitles, in session: AXMeetSession, checked target: Bool) -> String {
-        guard let element = findElement(in: session.window, matching: control) else {
+        focus(session)
+
+        guard let match = findElement(matching: control, in: session) else {
+            Logger.log("AX match \(control.name) checkbox → not_found session='\(session.title)'")
             return "not_found"
         }
+        let element = match.element
 
         if let current = boolAttribute(element, kAXValueAttribute), current == target {
+            Logger.log("AX checkbox \(control.name) already_\(target) \(describe(match, session: session))")
             return "already_\(target)"
         }
 
-        guard let point = centerPoint(of: element) else {
-            return "no_bounds"
+        if press(element) {
+            Logger.log("AX press \(control.name) checkbox → toggled \(describe(match, session: session))")
+            return "toggled"
         }
 
-        let clicked = postMouseClick(at: point)
-        return clicked ? "toggled" : "cg_event_failed"
+        Logger.log("AX press \(control.name) checkbox → failed \(describe(match, session: session))")
+        return "ax_press_failed"
     }
 
-    private func findElement(in root: AXUIElement, matching control: AXControlTitles) -> AXUIElement? {
+    private func focus(_ session: AXMeetSession) {
+        session.app.activate(options: [.activateIgnoringOtherApps])
+        AXUIElementPerformAction(session.window, kAXRaiseAction as CFString)
+        Thread.sleep(forTimeInterval: 0.2)
+    }
+
+    private func findElement(matching control: AXControlTitles, in session: AXMeetSession) -> AXElementMatch? {
+        let frame = rect(of: session.window)?.insetBy(dx: -200, dy: -200)
+        if let match = findElement(in: session.window, matching: control, source: "window", allowedFrame: nil) {
+            return match
+        }
+        return findElement(in: session.root, matching: control, source: "appRoot", allowedFrame: frame)
+    }
+
+    private func findElement(in root: AXUIElement, matching control: AXControlTitles, source: String, allowedFrame: CGRect? = nil) -> AXElementMatch? {
         var visited = 0
-        return findElement(in: root, matching: control, depth: 0, visited: &visited)
+        return findElement(in: root, matching: control, source: source, allowedFrame: allowedFrame, depth: 0, visited: &visited)
     }
 
-    private func findElement(in root: AXUIElement, matching control: AXControlTitles, depth: Int, visited: inout Int) -> AXUIElement? {
+    private func findElement(in root: AXUIElement, matching control: AXControlTitles, source: String, allowedFrame: CGRect?, depth: Int, visited: inout Int) -> AXElementMatch? {
         if depth > maxDepth || visited > maxNodes {
             return nil
         }
         visited += 1
 
-        if element(root, matches: control) && centerPoint(of: root) != nil {
-            return root
+        if element(root, matches: control), actionNames(root).contains(kAXPressAction as String), let point = centerPoint(of: root) {
+            if allowedFrame == nil || allowedFrame?.contains(point) == true {
+                return AXElementMatch(element: root, source: source, depth: depth, visited: visited)
+            }
         }
 
         for child in childElements(root) {
-            if let found = findElement(in: child, matching: control, depth: depth + 1, visited: &visited) {
+            if let found = findElement(in: child, matching: control, source: source, allowedFrame: allowedFrame, depth: depth + 1, visited: &visited) {
                 return found
             }
         }
@@ -179,23 +218,71 @@ final class AXMeetClient {
     }
 
     private func element(_ element: AXUIElement, matches control: AXControlTitles) -> Bool {
-        let haystack = [
-            stringAttribute(element, kAXTitleAttribute),
-            stringAttribute(element, kAXDescriptionAttribute),
-            stringAttribute(element, kAXHelpAttribute),
-            stringAttribute(element, kAXValueAttribute)
-        ]
-        .compactMap { $0 }
-        .map(normalize)
+        guard roleAllowed(element, for: control) else {
+            return false
+        }
+
+        let rawTexts = matchTexts(element)
+        guard !isBrowserChromeNoise(rawTexts) else {
+            return false
+        }
+
+        let haystack = rawTexts.map(normalize)
 
         guard !haystack.isEmpty else { return false }
 
         let needles = control.titles.map(normalize)
         return haystack.contains { text in
             needles.contains { needle in
-                text == needle || text.contains(needle)
+                if requiresExactText(control) {
+                    return text == needle
+                }
+                return text == needle || text.contains(needle)
             }
         }
+    }
+
+    private func requiresExactText(_ control: AXControlTitles) -> Bool {
+        control.kind == .button
+    }
+
+    private func roleAllowed(_ element: AXUIElement, for control: AXControlTitles) -> Bool {
+        let role = stringAttribute(element, kAXRoleAttribute) ?? ""
+
+        switch control.kind {
+        case .popupButton:
+            return role == kAXPopUpButtonRole as String || role == kAXButtonRole as String
+        case .menuItem:
+            return role == kAXMenuItemRole as String
+        case .checkbox:
+            return role == kAXCheckBoxRole as String
+        case .button:
+            return role == kAXButtonRole as String
+        }
+    }
+
+    private func matchTexts(_ element: AXUIElement) -> [String] {
+        [
+            stringAttribute(element, kAXTitleAttribute),
+            stringAttribute(element, kAXDescriptionAttribute),
+            stringAttribute(element, kAXHelpAttribute),
+            stringAttribute(element, kAXValueAttribute)
+        ]
+        .compactMap { $0 }
+    }
+
+    private func isBrowserChromeNoise(_ texts: [String]) -> Bool {
+        let combined = normalize(texts.joined(separator: " "))
+        let blocked = [
+            "bookmark",
+            "unnamed bookmark",
+            "http://",
+            "https://",
+            "chrome://",
+            "gemini.google.com",
+            "meet.google.com"
+        ]
+        return blocked.contains { combined.contains($0) }
     }
 
     private func childElements(_ element: AXUIElement) -> [AXUIElement] {
@@ -217,20 +304,19 @@ final class AXMeetClient {
         return CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2)
     }
 
-    private func postMouseClick(at point: CGPoint) -> Bool {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let move = CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left),
-              let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
-              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else {
-            return false
+    private func rect(of element: AXUIElement) -> CGRect? {
+        guard let position = pointAttribute(element, kAXPositionAttribute),
+              let size = sizeAttribute(element, kAXSizeAttribute),
+              size.width > 0,
+              size.height > 0 else {
+            return nil
         }
 
-        move.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.05)
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.08)
-        up.post(tap: .cghidEventTap)
-        return true
+        return CGRect(origin: position, size: size)
+    }
+
+    private func press(_ element: AXUIElement) -> Bool {
+        AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
     }
 
     private func arrayAttribute(_ element: AXUIElement, _ attribute: String) -> [AXUIElement] {
@@ -255,6 +341,22 @@ final class AXMeetClient {
             return number.stringValue
         }
         return nil
+    }
+
+    private func describe(_ match: AXElementMatch, session: AXMeetSession) -> String {
+        let element = match.element
+        let role = stringAttribute(element, kAXRoleAttribute) ?? "unknown"
+        let subrole = stringAttribute(element, kAXSubroleAttribute) ?? ""
+        let title = clean(stringAttribute(element, kAXTitleAttribute))
+        let desc = clean(stringAttribute(element, kAXDescriptionAttribute))
+        let help = clean(stringAttribute(element, kAXHelpAttribute))
+        let value = clean(stringAttribute(element, kAXValueAttribute))
+        let enabled = boolAttribute(element, kAXEnabledAttribute).map(String.init) ?? "unknown"
+        let actions = actionNames(element).joined(separator: ",")
+        let elementFrame = format(rect(of: element))
+        let windowFrame = format(rect(of: session.window))
+
+        return "[session:'\(clean(session.title) ?? "")' source:\(match.source) depth:\(match.depth) visited:\(match.visited) role:\(role) subrole:\(subrole) title:'\(title ?? "")' desc:'\(desc ?? "")' help:'\(help ?? "")' value:'\(value ?? "")' enabled:\(enabled) actions:\(actions) frame:\(elementFrame) windowFrame:\(windowFrame)]"
     }
 
     private func boolAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
@@ -294,6 +396,27 @@ final class AXMeetClient {
             return nil
         }
         return size
+    }
+
+    private func actionNames(_ element: AXUIElement) -> [String] {
+        var value: CFArray?
+        guard AXUIElementCopyActionNames(element, &value) == .success,
+              let actions = value as? [String] else {
+            return []
+        }
+        return actions
+    }
+
+    private func format(_ rect: CGRect?) -> String {
+        guard let rect else { return "none" }
+        return "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width))x\(Int(rect.height))"
+    }
+
+    private func clean(_ value: String?) -> String? {
+        value?
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "'", with: "\\'")
     }
 
     private func normalize(_ value: String) -> String {
