@@ -11,7 +11,7 @@ final class MeetWatcher {
     private let queue = DispatchQueue(label: "com.local.meetrecorder.watcher", qos: .utility)
     private let axClient = AXMeetClient()
 
-    private(set) var chromeDetected = false
+    private(set) var browserDetected = false
     private(set) var meetDetected = false
     private(set) var inCallDetected = false
     private(set) var accessibilityTrusted = false
@@ -44,7 +44,7 @@ final class MeetWatcher {
 
     private func poll() {
         accessibilityTrusted = AXMeetClient.isAccessibilityTrusted(prompt: false)
-        chromeDetected = !AXMeetClient.runningChromeApps().isEmpty
+        browserDetected = !AXMeetClient.runningBrowserApps().isEmpty
 
         guard accessibilityTrusted else {
             meetDetected = false

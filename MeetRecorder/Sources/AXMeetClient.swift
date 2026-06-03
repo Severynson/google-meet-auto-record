@@ -32,10 +32,11 @@ final class AXMeetClient {
     private let maxDepth = 60
     private let maxNodes = 20000
 
-    // Chrome/Chromium does not expose the web page's accessibility tree to AX
+    // Chromium-based browsers do not expose the web page's accessibility tree to AX
     // queries until an assistive client asks for it. Setting AXManualAccessibility
     // (and AXEnhancedUserInterface) on the application element turns it on, making
     // aria-labels visible as AX names. Without this, web buttons are invisible to AX.
+    // Safari and Firefox expose web content natively; setting these attributes is harmless.
     private static let manualAccessibilityAttr = "AXManualAccessibility" as CFString
     private static let enhancedUIAttr = "AXEnhancedUserInterface" as CFString
 
@@ -49,13 +50,32 @@ final class AXMeetClient {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    static func runningChromeApps() -> [NSRunningApplication] {
+    static func runningBrowserApps() -> [NSRunningApplication] {
         let bundleIDs = [
+            // Chrome family
             "com.google.Chrome",
             "com.google.Chrome.canary",
             "com.google.Chrome.beta",
             "com.google.Chrome.dev",
-            "com.chromium.Chromium"
+            "com.chromium.Chromium",
+            // Safari
+            "com.apple.Safari",
+            // Firefox
+            "org.mozilla.firefox",
+            "org.mozilla.nightly",
+            "org.mozilla.firefoxdeveloperedition",
+            // Opera
+            "com.operasoftware.Opera",
+            // Brave
+            "com.brave.Browser",
+            "com.brave.Browser.beta",
+            "com.brave.Browser.nightly",
+            // Arc
+            "company.thebrowser.Browser",
+            // Comet (Perplexity)
+            "ai.perplexity.comet",
+            // ChatGPT Atlas
+            "com.openai.atlas",
         ]
 
         return bundleIDs.flatMap {
@@ -73,7 +93,7 @@ final class AXMeetClient {
 
         var sessions: [AXMeetSession] = []
 
-        for app in Self.runningChromeApps() {
+        for app in Self.runningBrowserApps() {
             let root = AXUIElementCreateApplication(app.processIdentifier)
             Self.enableWebAccessibility(root)
             for window in arrayAttribute(root, kAXWindowsAttribute) {

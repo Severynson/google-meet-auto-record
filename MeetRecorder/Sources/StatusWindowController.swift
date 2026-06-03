@@ -124,7 +124,7 @@ final class StatusWindowController: NSWindowController {
         killButton.isHidden = false
 
         let watcher = (NSApp.delegate as? AppDelegate)?.watcher
-        let chromeDetected = watcher?.chromeDetected ?? false
+        let browserDetected = watcher?.browserDetected ?? false
         let meetDetected = watcher?.meetDetected ?? false
         let inCall = watcher?.inCallDetected ?? false
 
@@ -134,11 +134,11 @@ final class StatusWindowController: NSWindowController {
         } else if meetDetected {
             statusLabel.stringValue = "● Google Meet open — waiting to join the call"
             statusLabel.textColor = .systemBlue
-        } else if chromeDetected {
-            statusLabel.stringValue = "● Chrome detected — waiting for Meet"
+        } else if browserDetected {
+            statusLabel.stringValue = "● Browser detected — waiting for Meet"
             statusLabel.textColor = .secondaryLabelColor
         } else {
-            statusLabel.stringValue = "○ Chrome not detected"
+            statusLabel.stringValue = "○ No supported browser detected"
             statusLabel.textColor = .systemOrange
         }
 
