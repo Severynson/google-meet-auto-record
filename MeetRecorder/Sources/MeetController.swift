@@ -60,16 +60,27 @@ private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
 
     Thread.sleep(forTimeInterval: 0.3)
 
-    // 6. Click "start recording" to confirm (Почати запис).
+    // 6. Click "start recording" button (Почати запис) — opens consent dialog.
     let r3 = client.click(AXMeetControls.startRecording, in: session)
     Logger.log("Click start recording → \(r3)")
+    guard r3 == "ok" else {
+        fail("Could not click Start recording (\(r3)).")
+        return
+    }
 
-    if r3 == "ok" {
+    // Consent dialog "Переконайтеся, що всі готові" appears after a short delay.
+    Thread.sleep(forTimeInterval: 0.8)
+
+    // 7. Click "Почати" (Start) in the consent dialog to confirm.
+    let r4 = client.click(AXMeetControls.confirmStart, in: session)
+    Logger.log("Click confirm start → \(r4)")
+
+    if r4 == "ok" {
         Logger.log("Recording started for \(session.title)")
         onRecordingStarted?(session.key)
         onAutomationStatus?("Recording started ✓")
     } else {
-        fail("Could not click Start recording (\(r3)).")
+        fail("Could not click confirm Start (\(r4)) — consent dialog may not have appeared.")
     }
 }
 

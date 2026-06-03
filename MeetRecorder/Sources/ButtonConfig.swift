@@ -12,6 +12,7 @@ struct ButtonLabels: Decodable {
     let gemini: [String]
     let startRecording: [String]
     let leaveCall: [String]
+    let confirmStart: [String]
 }
 
 enum ButtonConfig {
@@ -42,6 +43,7 @@ enum ButtonConfig {
         transcript: ["Також створити текстову версію", "Also create a transcript", "transcript", "Также создать текстовую версию", "расшифровка", "ასევე ტექსტური ვერსიის შექმნა"],
         gemini: ["Також почати створювати нотатки за допомогою Gemini", "Also start taking notes with Gemini", "Также начать создавать заметки с помощью Gemini", "ასევე Gemini-ით ჩანაწერების შექმნის დაწყება", "Gemini"],
         startRecording: ["Почати запис", "Start recording", "Начать запись", "ჩაწერის დაწყება"],
-        leaveCall: ["Завершити дзвінок", "Leave call", "Покинуть звонок", "ზარის დატოვება"]
+        leaveCall: ["Завершити дзвінок", "Leave call", "Покинуть звонок", "ზარის დატოვება"],
+        confirmStart: ["Почати", "Start", "Начать", "დაწყება"]
     )
 }

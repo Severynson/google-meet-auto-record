@@ -24,6 +24,7 @@ enum AXMeetControls {
     static var gemini: AXControlTitles { AXControlTitles(name: "gemini checkbox", titles: ButtonConfig.shared.gemini) }
     static var startRecording: AXControlTitles { AXControlTitles(name: "start recording", titles: ButtonConfig.shared.startRecording) }
     static var leaveCall: AXControlTitles { AXControlTitles(name: "leave call", titles: ButtonConfig.shared.leaveCall) }
+    static var confirmStart: AXControlTitles { AXControlTitles(name: "confirm start", titles: ButtonConfig.shared.confirmStart) }
 }
 
 final class AXMeetClient {
