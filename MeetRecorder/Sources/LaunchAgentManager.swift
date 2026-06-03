@@ -33,6 +33,10 @@ struct LaunchAgentManager {
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
+    static var currentExecutablePath: String {
+        Bundle.main.executablePath ?? "/Applications/MeetRecorder.app/Contents/MacOS/MeetRecorder"
+    }
+
     static func state() -> LaunchAgentState {
         guard FileManager.default.fileExists(atPath: plistURL.path) else {
             return .notInstalled
@@ -43,14 +47,60 @@ struct LaunchAgentManager {
 
     // Install plist and load (start) the service.
     static func install() throws {
-        let dir = plistURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try plistContents().write(to: plistURL, atomically: true, encoding: .utf8)
+        try writeCurrentPlist()
         let r = shell("launchctl load '\(plistURL.path)'")
         if r.exitCode != 0 {
             throw makeError("launchctl load failed: \(r.output)")
         }
         Logger.log("LaunchAgent installed and started.")
+    }
+
+    static func installOrRepair() throws {
+        let currentState = state()
+        let repairNeeded = currentState == .notInstalled || plistNeedsRepair()
+
+        guard repairNeeded else { return }
+
+        if currentState == .installedRunning {
+            shell("launchctl unload '\(plistURL.path)' 2>/dev/null")
+        }
+
+        try writeCurrentPlist()
+
+        let r = shell("launchctl load '\(plistURL.path)'")
+        if r.exitCode != 0 {
+            throw makeError("launchctl load failed: \(r.output)")
+        }
+        Logger.log("LaunchAgent installed/repaired and started.")
+    }
+
+    static func relaunchThroughLaunchAgent(showBundleURL bundleURL: URL) {
+        shell("launchctl unload '\(plistURL.path)' 2>/dev/null")
+        try? writeCurrentPlist()
+
+        let script = """
+        sleep 0.5
+        launchctl load '\(plistURL.path)'
+        sleep 0.5
+        /usr/bin/open '\(bundleURL.path)'
+        """
+
+        let task = Process()
+        task.launchPath = "/bin/bash"
+        task.arguments = ["-c", script]
+
+        do {
+            try task.run()
+            Logger.log("LaunchAgent relaunch scheduled.")
+        } catch {
+            Logger.log("Failed to schedule LaunchAgent relaunch: \(error)")
+        }
+    }
+
+    private static func writeCurrentPlist() throws {
+        let dir = plistURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try plistContents().write(to: plistURL, atomically: true, encoding: .utf8)
     }
 
     // Unload + delete plist.
@@ -62,6 +112,9 @@ struct LaunchAgentManager {
 
     // Load existing plist (re-enable after disable).
     static func enable() throws {
+        if plistNeedsRepair() {
+            try writeCurrentPlist()
+        }
         let r = shell("launchctl load '\(plistURL.path)'")
         if r.exitCode != 0 {
             throw makeError("launchctl load failed: \(r.output)")
@@ -76,7 +129,6 @@ struct LaunchAgentManager {
     }
 
     private static func plistContents() -> String {
-        let exec = Bundle.main.executablePath ?? "/Applications/MeetRecorder.app/Contents/MacOS/MeetRecorder"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -87,16 +139,28 @@ struct LaunchAgentManager {
             <string>\(label)</string>
             <key>ProgramArguments</key>
             <array>
-                <string>\(exec)</string>
+                <string>\(currentExecutablePath)</string>
                 <string>--daemon</string>
             </array>
             <key>RunAtLoad</key>
             <true/>
-            <key>KeepAlive</key>
-            <true/>
         </dict>
         </plist>
         """
+    }
+
+    private static func plistNeedsRepair() -> Bool {
+        guard FileManager.default.fileExists(atPath: plistURL.path),
+              let data = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+            return true
+        }
+
+        let args = plist["ProgramArguments"] as? [String]
+        let installedExecutable = args?.first
+        let keepAliveExists = plist["KeepAlive"] != nil
+
+        return installedExecutable != currentExecutablePath || keepAliveExists
     }
 
     private static func makeError(_ msg: String) -> Error {

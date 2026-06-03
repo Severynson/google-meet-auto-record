@@ -34,16 +34,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let isDaemon = CommandLine.arguments.contains("--daemon")
 
         if !isDaemon {
-            // Silently install login item on first launch if not already set up.
-            if LaunchAgentManager.state() == .notInstalled {
-                try? LaunchAgentManager.install()
-            }
+            // Silently install or repair login item on first launch.
+            // Repair removes old KeepAlive plists and stale executable paths.
+            try? LaunchAgentManager.installOrRepair()
             showWindow()
         }
     }
 
     @objc func showWindow() {
         statusBar?.showStatusWindow()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showWindow()
+        return true
+    }
+
+    func reopenApp() {
+        let bundleURL = Bundle.main.bundleURL
+        LaunchAgentManager.relaunchThroughLaunchAgent(showBundleURL: bundleURL)
+        NSApp.terminate(nil)
     }
 }
 

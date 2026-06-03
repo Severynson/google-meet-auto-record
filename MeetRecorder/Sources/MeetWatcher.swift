@@ -9,11 +9,14 @@ final class MeetWatcher {
 
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "com.local.meetrecorder.watcher", qos: .utility)
+    private let axClient = AXMeetClient()
 
     private(set) var chromeDetected = false
+    private(set) var meetDetected = false
+    private(set) var accessibilityTrusted = false
     private(set) var lastRecordingTime: Date?
 
-    private var lastSeenTabURLs = Set<String>()
+    private var lastSeenSessionKeys = Set<String>()
 
     func start() {
         onRecordingStarted = { [weak self] _ in
@@ -33,19 +36,27 @@ final class MeetWatcher {
     }
 
     private func poll() {
-        let tabs = fetchChromeTabs()
-        chromeDetected = !tabs.isEmpty
+        accessibilityTrusted = AXMeetClient.isAccessibilityTrusted(prompt: false)
+        chromeDetected = !AXMeetClient.runningChromeApps().isEmpty
 
-        let meetURLs = Set(tabs.filter { $0.url.contains("meet.google.com") }.map { $0.url })
+        guard accessibilityTrusted else {
+            meetDetected = false
+            lastSeenSessionKeys.removeAll()
+            return
+        }
 
-        let closed = lastSeenTabURLs.subtracting(meetURLs)
-        for url in closed { clearSession(key: url) }
-        lastSeenTabURLs = meetURLs
+        let sessions = axClient.findMeetSessions()
+        meetDetected = !sessions.isEmpty
+        let sessionKeys = Set(sessions.map(\.key))
+
+        let closed = lastSeenSessionKeys.subtracting(sessionKeys)
+        for key in closed { clearSession(key: key) }
+        lastSeenSessionKeys = sessionKeys
 
         guard MeetWatcher.isRecordingEnabled else { return }
 
-        for url in meetURLs {
-            attemptStartRecording(tabURL: url)
+        for session in sessions {
+            attemptStartRecording(session: session, client: axClient)
         }
     }
 }

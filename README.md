@@ -5,20 +5,21 @@ Automatically starts recording when you join a Google Meet call. Runs as a macOS
 **Requirements:**
 - macOS 12+
 - Google Workspace account with recording enabled (Business Starter or above)
-- Chrome opened via the [accessibility-autoenabled-chrome-wrapper](https://github.com/your-repo/accessibility-autoenabled-chrome-wrapper) app, which launches Chrome with `--remote-debugging-port=9222`
+- Accessibility permission for `MeetRecorder`
+- Google Chrome, Chrome Beta/Dev/Canary, or Chromium
 
 ---
 
 ## How it works
 
-MeetRecorder polls Chrome every 3 seconds via Chrome DevTools Protocol (port 9222). When a `meet.google.com` tab is detected, it:
+MeetRecorder polls Chrome every 3 seconds through macOS Accessibility. When an active Google Meet window is detected, it:
 
 1. Clicks **More options** (⋮)
 2. Clicks **Start recording**
 3. In the confirmation panel: turns off captions, turns off transcript, enables Gemini notes
 4. Clicks **Confirm**
 
-All interaction uses stable `jsname` attributes from Meet's HTML — language-independent, works regardless of UI locale.
+Element lookup uses the Chrome accessibility tree: roles, accessible names, and localized title lists. The actual interaction is a real macOS mouse click at the element bounds, not JavaScript DOM clicking and not Chrome DevTools Protocol.
 
 ---
 
@@ -28,7 +29,7 @@ All interaction uses stable `jsname` attributes from Meet's HTML — language-in
 2. Open the DMG, drag `MeetRecorder.app` to **Applications**
 3. Launch `MeetRecorder` from Applications or Spotlight
 
-On first launch, the status window appears. Click **Install login item** — MeetRecorder will start automatically on every login from then on.
+On first launch, macOS may ask for Accessibility permission. Enable `MeetRecorder` in **System Settings → Privacy & Security → Accessibility**.
 
 ---
 
@@ -38,28 +39,18 @@ Click the menu bar icon (●) to open it.
 
 | Row | Meaning |
 |---|---|
-| Chrome CDP | Whether Chrome is running with debug port 9222 open |
-| Login item | Whether MeetRecorder is installed as a login item |
-| Last recording | Time of the most recent auto-started recording |
+| Status text | Accessibility, Chrome, and Google Meet detection state |
+| Auto-record meetings | Enables or disables automatic recording |
 
-**Buttons change based on state:**
-
-| Login item state | Buttons shown |
-|---|---|
-| Not installed | Install login item |
-| Installed & running | Disable · Uninstall |
-| Installed (disabled) | Enable · Uninstall |
-
-- **Disable** — stops the login item service but keeps it configured (easy to re-enable)
-- **Uninstall** — removes the login item entirely
+Use **Quit** to stop the running menu bar app.
 
 ---
 
 ## Daily use
 
-1. Open Chrome via the **accessibility wrapper app** (not directly from Dock)
-2. MeetRecorder starts at login automatically — nothing else to do
-3. Join any Google Meet call — recording starts within ~3 seconds
+1. Open Chrome normally
+2. MeetRecorder starts at login automatically
+3. Join any Google Meet call — recording starts within ~3 seconds after active-call controls appear
 
 **Logs:** `~/Library/Logs/MeetRecorder.log`
 
@@ -69,9 +60,10 @@ Click the menu bar icon (●) to open it.
 
 | Symptom | Fix |
 |---|---|
-| Chrome CDP: "Not detected" | Chrome was not opened via the wrapper app. Quit Chrome, relaunch via wrapper. |
+| Accessibility permission required | Enable MeetRecorder in System Settings → Privacy & Security → Accessibility. |
+| Chrome not detected | Open Chrome normally. No wrapper or debug port is required. |
 | Recording doesn't start | Meet UI still loading — retries every 3s automatically. Check log for errors. |
-| "Start recording item not found" | Account lacks recording permission (requires Google Workspace). |
+| "Start recording item not found" | Account lacks recording permission, title list needs another locale string, or Meet changed accessible labels. |
 | Second launch does nothing | Correct — duplicate detection is intentional. Existing instance receives focus signal. |
 
 ---
