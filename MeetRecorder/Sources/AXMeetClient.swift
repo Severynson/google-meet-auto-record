@@ -14,87 +14,29 @@ struct AXControlTitles {
     let titles: [String]
 }
 
+// Control labels are loaded from the bundled buttons.json (see ButtonConfig).
+// `name` is only for logging; `titles` are the accessible names matched in the AX tree.
 enum AXMeetControls {
-    static let moreOptions = AXControlTitles(
-        name: "more options",
-        titles: [
-            "More options", "More", "Options",
-            "Więcej opcji", "Więcej",
-            "Більше параметрів", "Інші параметри",
-            "Дополнительные параметры", "Ещё",
-            "Más opciones", "Plus d'options", "Weitere Optionen",
-            "Mais opções", "Altre opzioni", "Meer opties",
-            "その他のオプション", "更多选项", "更多選項"
-        ]
-    )
-
-    static let startRecording = AXControlTitles(
-        name: "start recording",
-        titles: [
-            "Start recording", "Record meeting", "Recording",
-            "Rozpocznij nagrywanie", "Nagrywanie",
-            "Почати запис", "Запис",
-            "Начать запись", "Запись",
-            "Iniciar grabación", "Grabación",
-            "Démarrer l’enregistrement", "Démarrer l'enregistrement", "Enregistrement",
-            "Aufzeichnung starten", "Aufzeichnen",
-            "Iniciar gravação", "Gravação",
-            "Avvia registrazione", "Registrazione",
-            "Opname starten", "Opnemen"
-        ]
-    )
-
-    static let endCall = AXControlTitles(
-        name: "active meeting marker",
-        titles: [
-            "Leave call", "End call", "Leave",
-            "Opuść rozmowę", "Zakończ połączenie", "Rozłącz",
-            "Завершити виклик", "Покинути дзвінок",
-            "Завершить вызов", "Выйти из вызова",
-            "Salir de la llamada", "Quitter l’appel", "Quitter l'appel",
-            "Anruf verlassen", "Sair da chamada",
-            "Abbandona chiamata", "Gesprek verlaten"
-        ]
-    )
-
-    static let subtitles = AXControlTitles(
-        name: "subtitles checkbox",
-        titles: [
-            "captions", "subtitles", "record captions", "include captions",
-            "napisy", "podpisy", "transkrypcja napisów",
-            "субтитри", "субтитры",
-            "subtítulos", "sous-titres", "untertitel",
-            "legendas", "sottotitoli", "ondertiteling"
-        ]
-    )
-
-    static let transcript = AXControlTitles(
-        name: "transcript checkbox",
-        titles: [
-            "transcript", "transcription", "start a transcript",
-            "transkrypcja", "transkrypt",
-            "стенограма", "транскрипція", "расшифровка", "транскрипция",
-            "transcripción", "transcription", "transkript",
-            "transcrição", "trascrizione"
-        ]
-    )
-
-    static let gemini = AXControlTitles(
-        name: "gemini checkbox",
-        titles: [
-            "Gemini", "Take notes with Gemini", "notes with Gemini",
-            "notatki Gemini", "rób notatki z Gemini",
-            "нотатки Gemini", "заметки Gemini",
-            "notas con Gemini", "notes avec Gemini",
-            "Notizen mit Gemini", "notas com Gemini",
-            "note con Gemini"
-        ]
-    )
+    static var moreOptions: AXControlTitles { AXControlTitles(name: "more options", titles: ButtonConfig.shared.moreOptions) }
+    static var manageRecording: AXControlTitles { AXControlTitles(name: "manage recording", titles: ButtonConfig.shared.manageRecording) }
+    static var subtitles: AXControlTitles { AXControlTitles(name: "subtitles checkbox", titles: ButtonConfig.shared.subtitles) }
+    static var transcript: AXControlTitles { AXControlTitles(name: "transcript checkbox", titles: ButtonConfig.shared.transcript) }
+    static var gemini: AXControlTitles { AXControlTitles(name: "gemini checkbox", titles: ButtonConfig.shared.gemini) }
+    static var startRecording: AXControlTitles { AXControlTitles(name: "start recording", titles: ButtonConfig.shared.startRecording) }
+    static var leaveCall: AXControlTitles { AXControlTitles(name: "leave call", titles: ButtonConfig.shared.leaveCall) }
 }
 
 final class AXMeetClient {
-    private let maxDepth = 28
-    private let maxNodes = 5000
+    // Web content trees (once Chrome accessibility is enabled) are large and deep.
+    private let maxDepth = 60
+    private let maxNodes = 20000
+
+    // Chrome/Chromium does not expose the web page's accessibility tree to AX
+    // queries until an assistive client asks for it. Setting AXManualAccessibility
+    // (and AXEnhancedUserInterface) on the application element turns it on, making
+    // aria-labels visible as AX names. Without this, web buttons are invisible to AX.
+    private static let manualAccessibilityAttr = "AXManualAccessibility" as CFString
+    private static let enhancedUIAttr = "AXEnhancedUserInterface" as CFString
 
     static func isAccessibilityTrusted(prompt: Bool) -> Bool {
         if AXIsProcessTrusted() {
@@ -132,11 +74,12 @@ final class AXMeetClient {
 
         for app in Self.runningChromeApps() {
             let root = AXUIElementCreateApplication(app.processIdentifier)
+            Self.enableWebAccessibility(root)
             for window in arrayAttribute(root, kAXWindowsAttribute) {
                 let title = stringAttribute(window, kAXTitleAttribute) ?? ""
                 let key = "\(app.processIdentifier):\(title)"
 
-                if title.localizedCaseInsensitiveContains("meet") || findElement(in: window, matching: AXMeetControls.endCall) != nil {
+                if title.localizedCaseInsensitiveContains("meet") {
                     sessions.append(AXMeetSession(key: key, app: app, window: window, title: title))
                 }
             }
@@ -145,8 +88,15 @@ final class AXMeetClient {
         return sessions
     }
 
-    func isMeetingActive(_ session: AXMeetSession) -> Bool {
-        findElement(in: session.window, matching: AXMeetControls.endCall) != nil
+    private static func enableWebAccessibility(_ appElement: AXUIElement) {
+        AXUIElementSetAttributeValue(appElement, manualAccessibilityAttr, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(appElement, enhancedUIAttr, kCFBooleanTrue)
+    }
+
+    // True once the given control is present in the window's AX tree.
+    // Used to gate automation: only start once "more options" actually appears.
+    func hasControl(_ control: AXControlTitles, in session: AXMeetSession) -> Bool {
+        findElement(in: session.window, matching: control) != nil
     }
 
     func click(_ control: AXControlTitles, in session: AXMeetSession) -> String {

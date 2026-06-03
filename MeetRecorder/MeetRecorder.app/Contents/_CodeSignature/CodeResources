@@ -8,6 +8,10 @@
 		<data>
 		TZyllf3l85OH5SYFzrkcm6W9/C4=
 		</data>
+		<key>Resources/buttons.json</key>
+		<data>
+		vO7/lJAdmlxj9VJciKhGcZY1UnQ=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -16,6 +20,13 @@
 			<key>hash2</key>
 			<data>
 			3ds39TmyckdccPqlwWMgqOllqkY/pg/KRaRR+G/nonM=
+			</data>
+		</dict>
+		<key>Resources/buttons.json</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			cqObGfAbfkdTed5uSaHXcSGTAEALaackQMmkX0SzuZk=
 			</data>
 		</dict>
 	</dict>

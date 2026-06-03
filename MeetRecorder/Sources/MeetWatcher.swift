@@ -13,8 +13,10 @@ final class MeetWatcher {
 
     private(set) var chromeDetected = false
     private(set) var meetDetected = false
+    private(set) var inCallDetected = false
     private(set) var accessibilityTrusted = false
     private(set) var lastRecordingTime: Date?
+    private(set) var lastAutomationStatus: String?
 
     private var lastSeenSessionKeys = Set<String>()
 
@@ -22,8 +24,13 @@ final class MeetWatcher {
         onRecordingStarted = { [weak self] _ in
             self?.lastRecordingTime = Date()
         }
+        onAutomationStatus = { [weak self] message in
+            self?.lastAutomationStatus = message
+        }
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + 2, repeating: 3.0)
+        // Poll every second: lobby and live call share the same URL, so we must
+        // keep checking for the "more options" control to know when to start.
+        t.schedule(deadline: .now() + 1, repeating: 1.0)
         t.setEventHandler { [weak self] in self?.poll() }
         t.resume()
         timer = t
@@ -41,6 +48,7 @@ final class MeetWatcher {
 
         guard accessibilityTrusted else {
             meetDetected = false
+            inCallDetected = false
             lastSeenSessionKeys.removeAll()
             return
         }
@@ -52,6 +60,8 @@ final class MeetWatcher {
         let closed = lastSeenSessionKeys.subtracting(sessionKeys)
         for key in closed { clearSession(key: key) }
         lastSeenSessionKeys = sessionKeys
+
+        inCallDetected = sessions.contains { axClient.hasControl(AXMeetControls.leaveCall, in: $0) }
 
         guard MeetWatcher.isRecordingEnabled else { return }
 

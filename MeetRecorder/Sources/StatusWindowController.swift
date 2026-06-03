@@ -1,17 +1,17 @@
 import Cocoa
 
 final class StatusWindowController: NSWindowController {
-    private var chromeStatusLabel: NSTextField!
+    private var instructionLabel: NSTextField!
+    private var statusLabel: NSTextField!
+    private var automationLabel: NSTextField!
     private var toggleButton: NSButton!
     private var grantAccessButton: NSButton!
-    private var reopenButton: NSButton!
+    private var killButton: NSButton!
     private var refreshTimer: Timer?
-    private var requestedAccessibilityAccess = false
-    private var restartAlertShown = false
 
     convenience init() {
         let w = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 200),
             styleMask: [.titled, .closable, .nonactivatingPanel, .hudWindow],
             backing: .buffered,
             defer: false
@@ -27,7 +27,7 @@ final class StatusWindowController: NSWindowController {
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }
@@ -43,77 +43,112 @@ final class StatusWindowController: NSWindowController {
     private func buildUI() {
         guard let content = window?.contentView else { return }
 
-        chromeStatusLabel = NSTextField(labelWithString: "")
-        chromeStatusLabel.font = .systemFont(ofSize: 12)
-        chromeStatusLabel.textColor = .secondaryLabelColor
+        instructionLabel = wrappingLabel(font: .systemFont(ofSize: 13))
+
+        statusLabel = NSTextField(labelWithString: "")
+        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
+
+        automationLabel = wrappingLabel(font: .systemFont(ofSize: 12))
+        automationLabel.textColor = .secondaryLabelColor
 
         toggleButton = NSButton(checkboxWithTitle: "Auto-record meetings", target: self, action: #selector(toggleRecording))
         toggleButton.font = .systemFont(ofSize: 14)
 
-        grantAccessButton = NSButton(title: "Grant Access", target: self, action: #selector(requestAccessibilityAccess))
+        grantAccessButton = NSButton(title: "Open Accessibility Settings", target: self, action: #selector(requestAccessibilityAccess))
         grantAccessButton.bezelStyle = .rounded
+        grantAccessButton.keyEquivalent = "\r"
 
-        reopenButton = NSButton(title: "Reopen App", target: self, action: #selector(reopenApp))
-        reopenButton.bezelStyle = .rounded
+        killButton = NSButton(title: "Kill bg process", target: self, action: #selector(confirmKillProcess))
+        killButton.bezelStyle = .rounded
 
-        let divider = NSBox()
-        divider.boxType = .separator
-
-        let quitBtn = NSButton(title: "Quit", target: NSApp, action: #selector(NSApp.terminate(_:)))
-        quitBtn.bezelStyle = .rounded
-
-        let bottomRow = NSStackView(views: [grantAccessButton, reopenButton, NSView(), quitBtn])
-        bottomRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [chromeStatusLabel, divider, toggleButton, NSView(), bottomRow])
+        let stack = NSStackView(views: [instructionLabel, statusLabel, toggleButton, automationLabel, grantAccessButton, killButton])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 16, right: 20)
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
 
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            stack.bottomAnchor.constraint(greaterThanOrEqualTo: content.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            divider.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
-            bottomRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
+            instructionLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
+            automationLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
         ])
+    }
+
+    private func wrappingLabel(font: NSFont) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = font
+        label.isEditable = false
+        label.isSelectable = false
+        label.drawsBackground = false
+        label.isBezeled = false
+        return label
     }
 
     // MARK: - Refresh
 
     private func refresh() {
+        let trusted = AXMeetClient.isAccessibilityTrusted(prompt: false)
+
+        if !trusted {
+            showPermissionRequest()
+        } else {
+            showRunningState()
+        }
+    }
+
+    private func showPermissionRequest() {
+        instructionLabel.isHidden = false
+        grantAccessButton.isHidden = false
+        statusLabel.isHidden = true
+        toggleButton.isHidden = true
+        automationLabel.isHidden = true
+        killButton.isHidden = true
+
+        instructionLabel.stringValue = """
+        MeetRecorder needs Accessibility permission to detect Google Meet and start recordings for you.
+
+        Click the button below, switch on MeetRecorder in the list, then come back. macOS will offer to quit & reopen the app — accept it.
+        """
+    }
+
+    private func showRunningState() {
+        instructionLabel.isHidden = true
+        grantAccessButton.isHidden = true
+        statusLabel.isHidden = false
+        toggleButton.isHidden = false
+        killButton.isHidden = false
+
         let watcher = (NSApp.delegate as? AppDelegate)?.watcher
         let chromeDetected = watcher?.chromeDetected ?? false
         let meetDetected = watcher?.meetDetected ?? false
-        let accessibilityTrusted = AXMeetClient.isAccessibilityTrusted(prompt: false)
+        let inCall = watcher?.inCallDetected ?? false
 
-        if !accessibilityTrusted {
-            chromeStatusLabel.stringValue = requestedAccessibilityAccess
-                ? "○ Enable access, then click Reopen App"
-                : "○ Accessibility permission required"
-            chromeStatusLabel.textColor = .systemOrange
+        if inCall {
+            statusLabel.stringValue = "● In a Google Meet call"
+            statusLabel.textColor = .systemGreen
         } else if meetDetected {
-            chromeStatusLabel.stringValue = "● Google Meet detected via Accessibility"
-            chromeStatusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "● Google Meet open — waiting to join the call"
+            statusLabel.textColor = .systemBlue
         } else if chromeDetected {
-            chromeStatusLabel.stringValue = "● Chrome detected — waiting for Meet"
-            chromeStatusLabel.textColor = .secondaryLabelColor
+            statusLabel.stringValue = "● Chrome detected — waiting for Meet"
+            statusLabel.textColor = .secondaryLabelColor
         } else {
-            chromeStatusLabel.stringValue = "○ Chrome not detected"
-            chromeStatusLabel.textColor = .systemOrange
+            statusLabel.stringValue = "○ Chrome not detected"
+            statusLabel.textColor = .systemOrange
         }
 
-        grantAccessButton.isHidden = accessibilityTrusted
-        reopenButton.isHidden = accessibilityTrusted && !requestedAccessibilityAccess
         toggleButton.state = MeetWatcher.isRecordingEnabled ? .on : .off
 
-        if accessibilityTrusted && requestedAccessibilityAccess && !restartAlertShown {
-            restartAlertShown = true
-            showRestartRequiredAlert()
+        if let status = watcher?.lastAutomationStatus {
+            automationLabel.isHidden = false
+            automationLabel.stringValue = status
+        } else {
+            automationLabel.isHidden = true
         }
     }
 
@@ -124,29 +159,37 @@ final class StatusWindowController: NSWindowController {
         Logger.log("Auto-record \(MeetWatcher.isRecordingEnabled ? "enabled" : "disabled").")
     }
 
+    // Opens the Accessibility pane directly. We deliberately do NOT call the
+    // AXIsProcessTrustedWithOptions prompt — the running process already
+    // appears in the list (it queries AX every second), and macOS shows its own
+    // "quit & reopen" alert once the toggle is switched on.
     @objc private func requestAccessibilityAccess() {
-        requestedAccessibilityAccess = true
-        _ = AXMeetClient.isAccessibilityTrusted(prompt: true)
         openAccessibilitySettings()
-        refresh()
     }
 
-    @objc private func reopenApp() {
-        (NSApp.delegate as? AppDelegate)?.reopenApp()
-    }
-
-    private func showRestartRequiredAlert() {
+    // Confirmation popup before killing the background process. Only proceeds
+    // on "OK"; "Go back" closes the popup and changes nothing.
+    @objc private func confirmKillProcess() {
         let alert = NSAlert()
-        alert.messageText = "Reopen MeetRecorder?"
-        alert.informativeText = "Accessibility access was granted. Reopen the app so the running process starts using the new permission."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Reopen")
-        alert.addButton(withTitle: "Later")
+        alert.messageText = "Kill background process?"
+        alert.informativeText = """
+        This stops MeetRecorder's background process completely — it will no longer watch for Google Meet or auto-start recordings, and it will not relaunch on login.
 
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            reopenApp()
-        }
+        You only need this when uninstalling the app. To use MeetRecorder again afterwards, reopen it.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Go back")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        killBackgroundProcess()
+    }
+
+    private func killBackgroundProcess() {
+        Logger.log("User requested kill of background process.")
+        // Unload the LaunchAgent so it won't relaunch, then quit this process.
+        LaunchAgentManager.disable()
+        NSApp.terminate(nil)
     }
 
     private func openAccessibilitySettings() {

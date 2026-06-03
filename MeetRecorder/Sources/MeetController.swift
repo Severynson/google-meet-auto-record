@@ -1,47 +1,58 @@
 import Foundation
 
-// Tracks meeting sessions we've triggered recording for.
-// Only inserted after a successful or definitively-failed attempt — NOT while still in lobby.
+// Tracks meeting sessions we've already attempted automation for.
+// The flow is "try once": once "more options" appears we run the full click
+// sequence a single time and never retry that session, success or failure.
 private var triggeredSessions = Set<String>()
 
 // Set by MeetWatcher to receive recording-started events.
 var onRecordingStarted: ((String) -> Void)?
 
-func isMeetingActive(session: AXMeetSession, client: AXMeetClient) -> Bool {
-    client.isMeetingActive(session)
-}
+// Set by MeetWatcher to surface the latest automation status/error in the UI.
+var onAutomationStatus: ((String) -> Void)?
 
 func attemptStartRecording(session: AXMeetSession, client: AXMeetClient) {
     guard !triggeredSessions.contains(session.key) else { return }
 
-    guard isMeetingActive(session: session, client: client) else {
-        Logger.log("Meet window \(session.title): lobby detected, waiting for meeting to start.")
+    // Gate: lobby and live call share the same URL. Wait for the "Leave call"
+    // button (Завершити дзвінок) which only appears once inside an active call.
+    // "More options" is also present in the waiting room, so it can't be used
+    // as a reliable signal. MeetWatcher re-polls every second.
+    guard client.hasControl(AXMeetControls.leaveCall, in: session) else {
+        Logger.log("Meet window \(session.title): not in call yet, waiting for '\(AXMeetControls.leaveCall.titles.first ?? "leave call")'.")
         return
     }
 
-    Logger.log("Meeting active. Window: \(session.title)")
+    // Controls present → single attempt. Mark tried up front so a failure never retries.
+    markTried(session.key)
+    Logger.log("Controls detected. Starting recording automation for: \(session.title)")
+    onAutomationStatus?("Meeting detected — starting recording…")
 
+    runRecordingFlow(session: session, client: client)
+}
+
+private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
+    // 1. Click "more options" (Інші опції).
     let r1 = client.click(AXMeetControls.moreOptions, in: session)
     Logger.log("Click more options → \(r1)")
     guard r1 == "ok" else {
-        Logger.log("Failed to click more options: \(r1), will retry next poll.")
+        fail("Could not open the more-options menu (\(r1)).")
         return
     }
 
     Thread.sleep(forTimeInterval: 0.7)
 
-    let r2 = client.click(AXMeetControls.startRecording, in: session)
-    Logger.log("Click start recording → \(r2)")
+    // 2. Click "manage recording" menu item (Керувати записом).
+    let r2 = client.click(AXMeetControls.manageRecording, in: session)
+    Logger.log("Click manage recording → \(r2)")
     guard r2 == "ok" else {
-        Logger.log("Start recording not found (\(r2)) — account may lack recording permission or title list needs update.")
-        if isDefinitiveFailure(r2) {
-            markTried(session.key)
-        }
+        fail("Could not open the recording panel (\(r2)) — account may lack recording permission.")
         return
     }
 
     Thread.sleep(forTimeInterval: 0.9)
 
+    // 3-5. Set the optional toggles before confirming.
     let s1 = setOptionalCheckbox(client: client, control: AXMeetControls.subtitles, in: session, checked: false)
     let s2 = setOptionalCheckbox(client: client, control: AXMeetControls.transcript, in: session, checked: false)
     let s3 = setOptionalCheckbox(client: client, control: AXMeetControls.gemini, in: session, checked: true)
@@ -49,28 +60,27 @@ func attemptStartRecording(session: AXMeetSession, client: AXMeetClient) {
 
     Thread.sleep(forTimeInterval: 0.3)
 
+    // 6. Click "start recording" to confirm (Почати запис).
     let r3 = client.click(AXMeetControls.startRecording, in: session)
-    Logger.log("Click confirm → \(r3)")
+    Logger.log("Click start recording → \(r3)")
 
     if r3 == "ok" {
-        markTried(session.key)
         Logger.log("Recording started for \(session.title)")
         onRecordingStarted?(session.key)
+        onAutomationStatus?("Recording started ✓")
     } else {
-        Logger.log("Confirm failed (\(r3)).")
-        if isDefinitiveFailure(r3) {
-            markTried(session.key)
-        }
+        fail("Could not click Start recording (\(r3)).")
     }
+}
+
+private func fail(_ message: String) {
+    Logger.log("Automation failed: \(message)")
+    onAutomationStatus?("Automation failed: \(message)")
 }
 
 private func setOptionalCheckbox(client: AXMeetClient, control: AXControlTitles, in session: AXMeetSession, checked: Bool) -> String {
     let result = client.setCheckbox(control, in: session, checked: checked)
     return result == "not_found" ? "skipped_not_found" : result
-}
-
-private func isDefinitiveFailure(_ result: String) -> Bool {
-    result == "not_found"
 }
 
 private func markTried(_ key: String) {

@@ -61,6 +61,7 @@ mkdir -p "$APP/Contents/Resources"
 
 mv MeetRecorder "$APP/Contents/MacOS/MeetRecorder"
 cp Info.plist "$APP/Contents/Info.plist"
+cp buttons.json "$APP/Contents/Resources/buttons.json"
 build_icon
 
 # Code signing.

@@ -1,0 +1,67 @@
+{
+  "_comment": "Each key is an English action name. Values are the accessible names (aria-label / menu text) Google Meet exposes for that control, across supported UI languages. Matching is case- and diacritic-insensitive and uses substring containment, so short tokens act as fallbacks. Order of automation: moreOptions -> manageRecording -> subtitles(uncheck) -> transcript(uncheck) -> gemini(check) -> startRecording.",
+
+  "moreOptions": [
+    "Інші опції",
+    "More options",
+    "Другие параметры",
+    "Дополнительные параметры",
+    "Другие опции",
+    "Ещё",
+    "სხვა პარამეტრები",
+    "მეტი ვარიანტი"
+  ],
+
+  "manageRecording": [
+    "Керувати записом",
+    "Manage recording",
+    "Управление записью",
+    "Управлять записью",
+    "ჩაწერის მართვა"
+  ],
+
+  "subtitles": [
+    "Включити субтитри в запис",
+    "Turn on captions in the recording",
+    "Include captions in the recording",
+    "captions",
+    "Включить субтитры в записи",
+    "субтитры",
+    "ჩანაწერში სუბტიტრების ჩართვა",
+    "სუბტიტრები"
+  ],
+
+  "transcript": [
+    "Також створити текстову версію",
+    "Also create a transcript",
+    "Also create a text version",
+    "transcript",
+    "Также создать текстовую версию",
+    "расшифровка",
+    "ასევე ტექსტური ვერსიის შექმნა"
+  ],
+
+  "gemini": [
+    "Також почати створювати нотатки за допомогою Gemini",
+    "Also start taking notes with Gemini",
+    "Take notes with Gemini",
+    "Также начать создавать заметки с помощью Gemini",
+    "Заметки с помощью Gemini",
+    "ასევე Gemini-ით ჩანაწერების შექმნის დაწყება",
+    "Gemini"
+  ],
+
+  "startRecording": [
+    "Почати запис",
+    "Start recording",
+    "Начать запись",
+    "ჩაწერის დაწყება"
+  ],
+
+  "leaveCall": [
+    "Завершити дзвінок",
+    "Leave call",
+    "Покинуть звонок",
+    "ზარის დატოვება"
+  ]
+}
