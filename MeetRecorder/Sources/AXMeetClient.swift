@@ -114,7 +114,7 @@ final class AXMeetClient {
             Self.enableWebAccessibility(root)
             for window in arrayAttribute(root, kAXWindowsAttribute) {
                 let title = stringAttribute(window, kAXTitleAttribute) ?? ""
-                let key = "\(app.processIdentifier):\(title)"
+                let key = "\(app.processIdentifier):\(Self.sessionIdentity(from: title))"
 
                 if title.localizedCaseInsensitiveContains("meet") {
                     sessions.append(AXMeetSession(key: key, app: app, root: root, window: window, title: title))
@@ -130,10 +130,34 @@ final class AXMeetClient {
         AXUIElementSetAttributeValue(appElement, enhancedUIAttr, kCFBooleanTrue)
     }
 
+    private static func sessionIdentity(from title: String) -> String {
+        let separators = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-")).inverted
+        for token in title.lowercased().components(separatedBy: separators) {
+            if token.range(of: #"^[a-z]{3}-[a-z]{4}-[a-z]{3}$"#, options: .regularExpression) != nil {
+                return "code:\(token)"
+            }
+        }
+        return "title:\(title)"
+    }
+
     // True once the given control is present in the window's AX tree.
     // Used to gate automation: only start once "more options" actually appears.
     func hasControl(_ control: AXControlTitles, in session: AXMeetSession) -> Bool {
         findElement(matching: control, in: session) != nil
+    }
+
+    func isRecordingActive(in session: AXMeetSession) -> Bool {
+        if normalize(session.title).contains("recording") {
+            Logger.log("Recording already active by window title sessionKey='\(session.key)' title='\(session.title)'")
+            return true
+        }
+
+        guard let match = findRecordingStatus(in: session) else {
+            return false
+        }
+
+        Logger.log("Recording already active by AX status sessionKey='\(session.key)' \(describe(match, session: session))")
+        return true
     }
 
     func click(_ control: AXControlTitles, in session: AXMeetSession) -> String {
@@ -194,6 +218,54 @@ final class AXMeetClient {
     private func findElement(in root: AXUIElement, matching control: AXControlTitles, source: String, allowedFrame: CGRect? = nil) -> AXElementMatch? {
         var visited = 0
         return findElement(in: root, matching: control, source: source, allowedFrame: allowedFrame, depth: 0, visited: &visited)
+    }
+
+    private func findRecordingStatus(in session: AXMeetSession) -> AXElementMatch? {
+        let frame = rect(of: session.window)?.insetBy(dx: -200, dy: -200)
+        if let match = findText(in: session.window, matching: Self.recordingStatusTexts, source: "window", allowedFrame: nil) {
+            return match
+        }
+        return findText(in: session.root, matching: Self.recordingStatusTexts, source: "appRoot", allowedFrame: frame)
+    }
+
+    private static let recordingStatusTexts = [
+        "This meeting is being recorded",
+        "Meeting is being recorded",
+        "Ця зустріч записується",
+        "Зустріч записується",
+        "Эта встреча записывается",
+        "Идет запись встречи",
+        "Встреча записывается"
+    ]
+
+    private func findText(in root: AXUIElement, matching texts: [String], source: String, allowedFrame: CGRect? = nil) -> AXElementMatch? {
+        var visited = 0
+        return findText(in: root, matching: texts.map(normalize), source: source, allowedFrame: allowedFrame, depth: 0, visited: &visited)
+    }
+
+    private func findText(in root: AXUIElement, matching needles: [String], source: String, allowedFrame: CGRect?, depth: Int, visited: inout Int) -> AXElementMatch? {
+        if depth > maxDepth || visited > maxNodes {
+            return nil
+        }
+        visited += 1
+
+        let haystack = matchTexts(root).map(normalize)
+        if haystack.contains(where: { text in needles.contains(where: { text.contains($0) }) }) {
+            if let point = centerPoint(of: root), allowedFrame != nil, allowedFrame?.contains(point) != true {
+                // Browser root nodes can expose combined text outside our window frame.
+                // Ignore that node but keep searching its children for a precise match.
+            } else {
+                return AXElementMatch(element: root, source: source, depth: depth, visited: visited)
+            }
+        }
+
+        for child in childElements(root) {
+            if let found = findText(in: child, matching: needles, source: source, allowedFrame: allowedFrame, depth: depth + 1, visited: &visited) {
+                return found
+            }
+        }
+
+        return nil
     }
 
     private func findElement(in root: AXUIElement, matching control: AXControlTitles, source: String, allowedFrame: CGRect?, depth: Int, visited: inout Int) -> AXElementMatch? {

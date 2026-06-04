@@ -14,6 +14,13 @@ var onAutomationStatus: ((String) -> Void)?
 func attemptStartRecording(session: AXMeetSession, client: AXMeetClient) {
     guard !triggeredSessions.contains(session.key) else { return }
 
+    if client.isRecordingActive(in: session) {
+        markTried(session.key)
+        Logger.log("Skip automation: meeting already recording for: \(session.title)")
+        onAutomationStatus?("Recording already active")
+        return
+    }
+
     // Gate: lobby and live call share the same URL. Wait for the "Leave call"
     // button (Завершити дзвінок) which only appears once inside an active call.
     // "More options" is also present in the waiting room, so it can't be used
@@ -32,6 +39,12 @@ func attemptStartRecording(session: AXMeetSession, client: AXMeetClient) {
 }
 
 private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
+    if client.isRecordingActive(in: session) {
+        Logger.log("Skip automation flow: meeting already recording for: \(session.title)")
+        onAutomationStatus?("Recording already active")
+        return
+    }
+
     // 1. Click "more options" (Інші опції).
     let r1 = client.click(AXMeetControls.moreOptions, in: session)
     Logger.log("Click more options → \(r1)")
