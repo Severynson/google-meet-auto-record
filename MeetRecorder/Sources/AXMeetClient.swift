@@ -41,6 +41,11 @@ enum AXMeetControls {
     static var startRecording: AXControlTitles { AXControlTitles(name: "start recording", titles: ButtonConfig.shared.startRecording, kind: .button) }
     static var leaveCall: AXControlTitles { AXControlTitles(name: "leave call", titles: ButtonConfig.shared.leaveCall, kind: .button) }
     static var confirmStart: AXControlTitles { AXControlTitles(name: "confirm start", titles: ButtonConfig.shared.confirmStart, kind: .button) }
+    // The red "Запис"/"Recording" badge (role=button) shown top-left for the whole
+    // duration a meeting is being recorded. Persistent, unlike the banner. Used only
+    // for detection — never clicked. Exact-match (kind .button) so it does not collide
+    // with "Start recording"/"Manage recording" which also contain the "recording" token.
+    static var recordingBadge: AXControlTitles { AXControlTitles(name: "recording badge", titles: ButtonConfig.shared.recordingBadge, kind: .button) }
 }
 
 final class AXMeetClient {
@@ -147,11 +152,22 @@ final class AXMeetClient {
     }
 
     func isRecordingActive(in session: AXMeetSession) -> Bool {
-        if normalize(session.title).contains("recording") {
-            Logger.log("Recording already active by window title sessionKey='\(session.key)' title='\(session.title)'")
+        // NOTE: do NOT key off the window title. Chrome appends a media-capture
+        // indicator ("Microphone recording", "Camera and microphone recording")
+        // to the tab title whenever the page uses the mic/camera — which is true
+        // in every Meet call, recorded or not. It is Chrome's capture dot, not
+        // Meet's record-meeting feature, so title.contains("recording") matched
+        // every windowed call and wrongly skipped automation.
+
+        // Primary signal: the persistent red "Запис"/"Recording" badge (role=button)
+        // shown for the whole duration the meeting is recorded.
+        if let badge = findElement(matching: AXMeetControls.recordingBadge, in: session) {
+            Logger.log("Recording already active by AX badge sessionKey='\(session.key)' \(describe(badge, session: session))")
             return true
         }
 
+        // Secondary signal: the on-screen "This meeting is being recorded" banner,
+        // which Meet shows briefly when recording starts (can collapse afterwards).
         guard let match = findRecordingStatus(in: session) else {
             return false
         }

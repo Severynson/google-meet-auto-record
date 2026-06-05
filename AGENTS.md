@@ -1,13 +1,17 @@
 ## Changes tracking
 
-- Read @CHANGELOG.md when fixing a bug, investigating why something broke, or understanding behavior that changed after recent edits.
-
 - Update @CHANGELOG.md after introducing major project changes.
 
 - When updating @CHANGELOG.md, tie changes to the current Git state:
   - If changes are already committed, record them under the relevant commit hash.
   - If changes are uncommitted or untracked, record them under an `Uncommitted changes` section.
   - At the start of a new task, check whether the previous `Uncommitted changes` section now corresponds to a real commit. If so, rename/move that section under the new commit hash before adding new entries.
+
+# Fixing bugs:
+
+- Read @CHANGELOG.md when fixing a bug, investigating why something broke, or understanding behavior that changed after recent edits.
+
+- Read ~/Library/Logs/MeetRecorder.log to see the exact errors and elements being pressed, and at what state of the app did the error occured exactly.
 
 ## Code Conventions
 

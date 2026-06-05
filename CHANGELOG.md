@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- **False "already recording" in windowed Chrome** (`AXMeetClient.isRecordingActive`): removed the `title.contains("recording")` branch. Chrome appends a media-capture indicator (`Microphone recording`, `Camera and microphone recording`) to the tab/window title whenever the page uses the mic/camera — present in *every* Meet call, recorded or not. It is Chrome's capture dot, not Meet's record-meeting feature, so the title check matched every windowed call and skipped automation ("Recording already active by window title"). Fullscreen Chrome omits the suffix, so it only manifested in non-fullscreen. Detection now relies on AX signals scoped to the browser window tree (see Added).
+
+### Added
+- **Recording-badge detection** (`AXMeetClient` / `ButtonConfig` / `buttons.json`): `isRecordingActive()` now primarily looks for the persistent red "Запис"/"Recording" badge (`role=button`, top-left) that Meet shows for the whole duration a meeting is recorded — replacing the unreliable title check that previously prevented re-triggering automation on window refocus. Matched **exactly** as a button (kind `.button`) so it does not collide with "Start recording"/"Manage recording", which also contain the recording token. The collapsing "This meeting is being recorded" banner (`recordingActive`) remains as a secondary signal. New `recordingBadge` key in `buttons.json` (uk/en/ru/ka).
+- **Non-fullscreen click reliability** (`MeetController`): pure AX-presence polling pressed controls the instant they appeared in the tree, but Google Meet inserts menu items / panel buttons into the AX tree *before* they are interactive (dropdown still animating, JS handler not yet wired). `AXPress` then returned success but did nothing — "manage recording" press silently no-op'd and the recording panel never rendered, mostly in windowed (non-fullscreen) Chrome where the UI raced ahead. Fix: `clickWhenRendered` now waits for render (fast path, up to 3 s) **then** settles `settleAfterRender` (0.5 s) before pressing, and a matching settle was added after the recording panel renders before the checkboxes. AX presence ≠ interactivity.
+
 ### Changed
-- `MeetController`: fixed `Thread.sleep` delays replaced with AX-polling (`waitForControl` / `clickWhenRendered`, 3 s timeout, 50 ms poll interval) — each step fires as soon as the element appears in the AX tree instead of waiting a fixed duration.
+- `MeetController`: fixed `Thread.sleep` delays replaced with AX-polling (`waitForControl` / `clickWhenRendered`, 3 s timeout, 50 ms poll interval) — each step waits for the element to appear, then settles `settleAfterRender` (0.5 s) before pressing so it is interactive, instead of waiting a fixed duration.
 - `ButtonConfig`: removed soft fallback defaults; missing or corrupt `buttons.json` now crashes immediately with `fatalError` instead of silently degrading.
 - `ButtonConfig` / `AXMeetClient`: hardcoded `recordingStatusTexts` array moved to `buttons.json` under the `recordingActive` key — single source of truth.
 

@@ -13,6 +13,7 @@ struct ButtonLabels: Decodable {
     let leaveCall: [String]
     let confirmStart: [String]
     let recordingActive: [String]
+    let recordingBadge: [String]
 }
 
 enum ButtonConfig {

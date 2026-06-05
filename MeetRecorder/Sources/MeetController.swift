@@ -6,6 +6,10 @@ import Foundation
 private var triggeredSessions = Set<String>()
 private let renderWaitTimeout: TimeInterval = 3.0
 private let renderPollInterval: TimeInterval = 0.05
+// Google Meet inserts controls into the AX tree before they are interactive
+// (dropdown still animating / JS handler not yet wired). Pressing during that
+// window returns AXSuccess but does nothing. Settle after render before pressing.
+private let settleAfterRender: TimeInterval = 0.5
 
 // Set by MeetWatcher to receive recording-started events.
 var onRecordingStarted: ((String) -> Void)?
@@ -67,6 +71,7 @@ private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
         fail("Recording panel did not render within \(renderWaitTimeout)s after Manage recording.")
         return
     }
+    Thread.sleep(forTimeInterval: settleAfterRender)
 
     // 3-5. Set the optional toggles before confirming.
     let s1 = setOptionalCheckbox(client: client, control: AXMeetControls.subtitles, in: session, checked: false)
@@ -105,10 +110,13 @@ private func setOptionalCheckbox(client: AXMeetClient, control: AXControlTitles,
     return result == "not_found" ? "skipped_not_found" : result
 }
 
+// Wait for the control to appear (fast path, up to renderWaitTimeout for slow renders),
+// then settle so it becomes interactive before pressing. AX presence precedes interactivity.
 private func clickWhenRendered(client: AXMeetClient, control: AXControlTitles, in session: AXMeetSession) -> String {
     guard waitForControl(client: client, control: control, in: session, reason: "click") else {
         return "render_timeout"
     }
+    Thread.sleep(forTimeInterval: settleAfterRender)
     return client.click(control, in: session)
 }
 

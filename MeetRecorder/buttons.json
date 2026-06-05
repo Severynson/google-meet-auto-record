@@ -1,5 +1,5 @@
 {
-  "_comment": "Each key is an English action/status name. Values are the accessible names Google Meet exposes as aria-label/title/description/help/value/menu text, across supported UI languages. Matching is case- and diacritic-insensitive and uses substring containment, so short tokens act as fallbacks. Order of automation: moreOptions -> manageRecording -> subtitles(uncheck) -> transcript(uncheck) -> gemini(check) -> startRecording -> confirmStart. recordingActive is checked before automation to avoid restarting an already-recording meeting.",
+  "_comment": "Each key is an English action/status name. Values are the accessible names Google Meet exposes as aria-label/title/description/help/value/menu text, across supported UI languages. Matching is case- and diacritic-insensitive and uses substring containment, so short tokens act as fallbacks. Order of automation: moreOptions -> manageRecording -> subtitles(uncheck) -> transcript(uncheck) -> gemini(check) -> startRecording -> confirmStart. recordingActive (banner text) and recordingBadge (the persistent red Recording badge, matched exactly as a button) are both checked before automation to avoid restarting an already-recording meeting.",
 
   "moreOptions": [
     "Інші опції",
@@ -129,5 +129,12 @@
     "Эта видеовстреча записывается",
     "ეს შეხვედრა იწერება",
     "შეხვედრა იწერება"
+  ],
+
+  "recordingBadge": [
+    "Запис",
+    "Recording",
+    "Запись",
+    "ჩაწერა"
   ]
 }
