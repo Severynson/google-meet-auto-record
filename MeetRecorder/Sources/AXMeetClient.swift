@@ -222,21 +222,11 @@ final class AXMeetClient {
 
     private func findRecordingStatus(in session: AXMeetSession) -> AXElementMatch? {
         let frame = rect(of: session.window)?.insetBy(dx: -200, dy: -200)
-        if let match = findText(in: session.window, matching: Self.recordingStatusTexts, source: "window", allowedFrame: nil) {
+        if let match = findText(in: session.window, matching: ButtonConfig.shared.recordingActive, source: "window", allowedFrame: nil) {
             return match
         }
-        return findText(in: session.root, matching: Self.recordingStatusTexts, source: "appRoot", allowedFrame: frame)
+        return findText(in: session.root, matching: ButtonConfig.shared.recordingActive, source: "appRoot", allowedFrame: frame)
     }
-
-    private static let recordingStatusTexts = [
-        "This meeting is being recorded",
-        "Meeting is being recorded",
-        "Ця зустріч записується",
-        "Зустріч записується",
-        "Эта встреча записывается",
-        "Идет запись встречи",
-        "Встреча записывается"
-    ]
 
     private func findText(in root: AXUIElement, matching texts: [String], source: String, allowedFrame: CGRect? = nil) -> AXElementMatch? {
         var visited = 0

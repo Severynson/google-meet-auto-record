@@ -4,6 +4,8 @@ import Foundation
 // The flow is "try once": once "more options" appears we run the full click
 // sequence a single time and never retry that session, success or failure.
 private var triggeredSessions = Set<String>()
+private let renderWaitTimeout: TimeInterval = 3.0
+private let renderPollInterval: TimeInterval = 0.05
 
 // Set by MeetWatcher to receive recording-started events.
 var onRecordingStarted: ((String) -> Void)?
@@ -46,24 +48,25 @@ private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
     }
 
     // 1. Click "more options" (Інші опції).
-    let r1 = client.click(AXMeetControls.moreOptions, in: session)
+    let r1 = clickWhenRendered(client: client, control: AXMeetControls.moreOptions, in: session)
     Logger.log("Click more options → \(r1)")
     guard r1 == "ok" else {
         fail("Could not open the more-options menu (\(r1)).")
         return
     }
 
-    Thread.sleep(forTimeInterval: 0.7)
-
     // 2. Click "manage recording" menu item (Керувати записом).
-    let r2 = client.click(AXMeetControls.manageRecording, in: session)
+    let r2 = clickWhenRendered(client: client, control: AXMeetControls.manageRecording, in: session)
     Logger.log("Click manage recording → \(r2)")
     guard r2 == "ok" else {
         fail("Could not open the recording panel (\(r2)) — account may lack recording permission.")
         return
     }
 
-    Thread.sleep(forTimeInterval: 0.9)
+    guard waitForControl(client: client, control: AXMeetControls.startRecording, in: session, reason: "recording panel") else {
+        fail("Recording panel did not render within \(renderWaitTimeout)s after Manage recording.")
+        return
+    }
 
     // 3-5. Set the optional toggles before confirming.
     let s1 = setOptionalCheckbox(client: client, control: AXMeetControls.subtitles, in: session, checked: false)
@@ -71,21 +74,16 @@ private func runRecordingFlow(session: AXMeetSession, client: AXMeetClient) {
     let s3 = setOptionalCheckbox(client: client, control: AXMeetControls.gemini, in: session, checked: true)
     Logger.log("Checkboxes — subtitles:\(s1) transcript:\(s2) gemini:\(s3)")
 
-    Thread.sleep(forTimeInterval: 0.3)
-
     // 6. Click "start recording" button (Почати запис) — opens consent dialog.
-    let r3 = client.click(AXMeetControls.startRecording, in: session)
+    let r3 = clickWhenRendered(client: client, control: AXMeetControls.startRecording, in: session)
     Logger.log("Click start recording → \(r3)")
     guard r3 == "ok" else {
         fail("Could not click Start recording (\(r3)).")
         return
     }
 
-    // Consent dialog "Переконайтеся, що всі готові" appears after a short delay.
-    Thread.sleep(forTimeInterval: 0.8)
-
     // 7. Click "Почати" (Start) in the consent dialog to confirm.
-    let r4 = client.click(AXMeetControls.confirmStart, in: session)
+    let r4 = clickWhenRendered(client: client, control: AXMeetControls.confirmStart, in: session)
     Logger.log("Click confirm start → \(r4)")
 
     if r4 == "ok" {
@@ -105,6 +103,29 @@ private func fail(_ message: String) {
 private func setOptionalCheckbox(client: AXMeetClient, control: AXControlTitles, in session: AXMeetSession, checked: Bool) -> String {
     let result = client.setCheckbox(control, in: session, checked: checked)
     return result == "not_found" ? "skipped_not_found" : result
+}
+
+private func clickWhenRendered(client: AXMeetClient, control: AXControlTitles, in session: AXMeetSession) -> String {
+    guard waitForControl(client: client, control: control, in: session, reason: "click") else {
+        return "render_timeout"
+    }
+    return client.click(control, in: session)
+}
+
+private func waitForControl(client: AXMeetClient, control: AXControlTitles, in session: AXMeetSession, reason: String) -> Bool {
+    let start = Date()
+
+    while Date().timeIntervalSince(start) <= renderWaitTimeout {
+        if client.hasControl(control, in: session) {
+            let elapsed = String(format: "%.2f", Date().timeIntervalSince(start))
+            Logger.log("AX wait \(control.name) for \(reason) → rendered after \(elapsed)s")
+            return true
+        }
+        Thread.sleep(forTimeInterval: renderPollInterval)
+    }
+
+    Logger.log("AX wait \(control.name) for \(reason) → timeout after \(renderWaitTimeout)s session='\(session.title)'")
+    return false
 }
 
 private func markTried(_ key: String) {
