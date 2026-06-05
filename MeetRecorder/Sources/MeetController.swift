@@ -1,9 +1,19 @@
 import Foundation
 
-// Tracks meeting sessions we've already attempted automation for.
-// The flow is "try once": once "more options" appears we run the full click
-// sequence a single time and never retry that session, success or failure.
-private var triggeredSessions = Set<String>()
+// The "new_meeting" flag, per session (keyed by stable room code).
+// A session is ARMED (eligible for automation) only after it is observed in a
+// pre-call state: Meet open but NO "Leave call" button = waiting room, or the
+// post-call screen after the user ended the previous call. That is the only
+// moment a *new* meeting can begin.
+//
+// Eligibility is NEVER recomputed from live UI on every poll — it is flipped by
+// exactly two explicit transitions:
+//   1. armed   = true  when a pre-call state (no leaveCall) is seen.
+//   2. armed   = false when the recording flow runs for that session.
+// So window switches / refocus / momentary AX-tree flicker (session vanishing
+// then reappearing, or the call UI dropping out of an unfocused window) do NOT
+// re-arm and do NOT re-trigger. Only genuinely re-entering a pre-call state does.
+private var armedSessions = Set<String>()
 private let renderWaitTimeout: TimeInterval = 3.0
 private let renderPollInterval: TimeInterval = 0.05
 // Google Meet inserts controls into the AX tree before they are interactive
@@ -18,26 +28,34 @@ var onRecordingStarted: ((String) -> Void)?
 var onAutomationStatus: ((String) -> Void)?
 
 func attemptStartRecording(session: AXMeetSession, client: AXMeetClient) {
-    guard !triggeredSessions.contains(session.key) else { return }
+    // Lobby and live call share the same URL. The "Leave call" button
+    // (Завершити дзвінок) only exists inside an active call, so its absence
+    // means waiting room or post-call screen — i.e. a new meeting attempt.
+    let inCall = client.hasControl(AXMeetControls.leaveCall, in: session)
+
+    guard inCall else {
+        // Pre-call state → arm (set new_meeting = true) so automation fires once
+        // the user joins. Nothing to click yet. MeetWatcher re-polls every second.
+        if armedSessions.insert(session.key).inserted {
+            Logger.log("New meeting armed (no leave-call button yet) for: \(session.title)")
+        }
+        return
+    }
+
+    // In an active call. Only proceed if this meeting was armed while pre-call.
+    // If not armed we are returning to an already-handled call (e.g. user stopped
+    // recording then switched windows) — never re-record it.
+    guard armedSessions.contains(session.key) else { return }
 
     if client.isRecordingActive(in: session) {
-        markTried(session.key)
+        armedSessions.remove(session.key)
         Logger.log("Skip automation: meeting already recording for: \(session.title)")
         onAutomationStatus?("Recording already active")
         return
     }
 
-    // Gate: lobby and live call share the same URL. Wait for the "Leave call"
-    // button (Завершити дзвінок) which only appears once inside an active call.
-    // "More options" is also present in the waiting room, so it can't be used
-    // as a reliable signal. MeetWatcher re-polls every second.
-    guard client.hasControl(AXMeetControls.leaveCall, in: session) else {
-        Logger.log("Meet window \(session.title): not in call yet, waiting for '\(AXMeetControls.leaveCall.titles.first ?? "leave call")'.")
-        return
-    }
-
-    // Controls present → single attempt. Mark tried up front so a failure never retries.
-    markTried(session.key)
+    // Disarm up front (new_meeting = false) so a failure never retries this meeting.
+    armedSessions.remove(session.key)
     Logger.log("Controls detected. Starting recording automation for: \(session.title)")
     onAutomationStatus?("Meeting detected — starting recording…")
 
@@ -136,11 +154,3 @@ private func waitForControl(client: AXMeetClient, control: AXControlTitles, in s
     return false
 }
 
-private func markTried(_ key: String) {
-    triggeredSessions.insert(key)
-}
-
-func clearSession(key: String) {
-    triggeredSessions.remove(key)
-    Logger.log("Session cleared: \(key)")
-}

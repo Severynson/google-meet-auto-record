@@ -18,8 +18,6 @@ final class MeetWatcher {
     private(set) var lastRecordingTime: Date?
     private(set) var lastAutomationStatus: String?
 
-    private var lastSeenSessionKeys = Set<String>()
-
     func start() {
         onRecordingStarted = { [weak self] _ in
             self?.lastRecordingTime = Date()
@@ -49,18 +47,17 @@ final class MeetWatcher {
         guard accessibilityTrusted else {
             meetDetected = false
             inCallDetected = false
-            lastSeenSessionKeys.removeAll()
             return
         }
 
         let sessions = axClient.findMeetSessions()
         meetDetected = !sessions.isEmpty
-        let sessionKeys = Set(sessions.map(\.key))
 
-        let closed = lastSeenSessionKeys.subtracting(sessionKeys)
-        for key in closed { clearSession(key: key) }
-        lastSeenSessionKeys = sessionKeys
-
+        // Do NOT reset automation eligibility when a session disappears from the
+        // AX tree — window switches / unfocused windows make findMeetSessions
+        // momentarily drop a still-open meeting, and resetting here is exactly what
+        // caused re-recording on refocus. Eligibility is owned by MeetController's
+        // armed-state model, flipped only by genuine pre-call ↔ in-call transitions.
         inCallDetected = sessions.contains { axClient.hasControl(AXMeetControls.leaveCall, in: $0) }
 
         guard MeetWatcher.isRecordingEnabled else { return }
