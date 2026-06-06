@@ -128,6 +128,39 @@ struct LaunchAgentManager {
         Logger.log("LaunchAgent disabled.")
     }
 
+    // Full uninstall. The app cannot delete its own bundle while running, so we
+    // spawn a DETACHED bash helper (binary is /bin/bash, outside the bundle) that
+    // outlives this process: it sleeps until the app has quit, then unloads the
+    // daemon, kills both running instances (GUI + --daemon, same process name),
+    // removes the accessibility grant, the plist, and finally the app bundle.
+    //
+    // pkill uses -x (exact process NAME) not -f (full command line): the helper's
+    // own command line contains the string "MeetRecorder" (the rm paths), so -f
+    // would match and kill the helper mid-uninstall. -x matches only the real
+    // "MeetRecorder" binary — never this bash helper.
+    static func performSelfUninstall() {
+        let plistPath = plistURL.path
+        let script = """
+        sleep 1
+        launchctl unload '\(plistPath)' 2>/dev/null
+        pkill -x MeetRecorder 2>/dev/null
+        tccutil reset Accessibility \(label) 2>/dev/null
+        rm -f '\(plistPath)'
+        rm -rf /Applications/MeetRecorder.app
+        """
+
+        let task = Process()
+        task.launchPath = "/bin/bash"
+        task.arguments = ["-c", script]
+
+        do {
+            try task.run()
+            Logger.log("Self-uninstall helper launched.")
+        } catch {
+            Logger.log("Failed to launch self-uninstall helper: \(error)")
+        }
+    }
+
     private static func plistContents() -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>

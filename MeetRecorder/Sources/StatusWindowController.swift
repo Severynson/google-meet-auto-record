@@ -58,7 +58,7 @@ final class StatusWindowController: NSWindowController {
         grantAccessButton.bezelStyle = .rounded
         grantAccessButton.keyEquivalent = "\r"
 
-        killButton = NSButton(title: "Kill bg process", target: self, action: #selector(confirmKillProcess))
+        killButton = NSButton(title: "Uninstall", target: self, action: #selector(confirmUninstall))
         killButton.bezelStyle = .rounded
 
         let stack = NSStackView(views: [instructionLabel, statusLabel, toggleButton, automationLabel, grantAccessButton, killButton])
@@ -167,28 +167,34 @@ final class StatusWindowController: NSWindowController {
         openAccessibilitySettings()
     }
 
-    // Confirmation popup before killing the background process. Only proceeds
-    // on "OK"; "Go back" closes the popup and changes nothing.
-    @objc private func confirmKillProcess() {
+    // Confirmation popup before uninstalling. Only proceeds on "Uninstall";
+    // "Go back" closes the popup and changes nothing.
+    @objc private func confirmUninstall() {
         let alert = NSAlert()
-        alert.messageText = "Kill background process?"
+        alert.messageText = "Uninstall MeetRecorder?"
         alert.informativeText = """
-        This stops MeetRecorder's background process completely — it will no longer watch for Google Meet or auto-start recordings, and it will not relaunch on login.
+        This completely removes MeetRecorder from your Mac:
 
-        You only need this when uninstalling the app. To use MeetRecorder again afterwards, reopen it.
+        • Stops the background process and the visible app
+        • Disables auto-start at login
+        • Removes the Accessibility permission
+        • Deletes the app from your Applications folder
+
+        This cannot be undone. To use MeetRecorder again you must reinstall it from the DMG.
         """
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Uninstall")
         alert.addButton(withTitle: "Go back")
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        killBackgroundProcess()
+        uninstall()
     }
 
-    private func killBackgroundProcess() {
-        Logger.log("User requested kill of background process.")
-        // Unload the LaunchAgent so it won't relaunch, then quit this process.
-        LaunchAgentManager.disable()
+    private func uninstall() {
+        Logger.log("User requested full uninstall.")
+        // Launch the detached helper that performs cleanup after we quit, then
+        // terminate this process so the helper can delete the app bundle.
+        LaunchAgentManager.performSelfUninstall()
         NSApp.terminate(nil)
     }
 
